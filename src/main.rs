@@ -4,10 +4,11 @@ use std::path::{Component, Path, PathBuf};
 
 use chrono::Local;
 use tar::Builder;
+use walkdir::WalkDir;
+
+static BACKUP_FOLDER_PATH: &str = "laptop-backup";
 
 fn main() {
-    let backup_folder_path: &str = "laptop-backup";
-
     let paths: Vec<&str> = vec![
         "/home/matty/.ssh/",
         "/home/matty/.kube/",
@@ -15,17 +16,17 @@ fn main() {
     ];
 
     for path in &paths {
-        if let Err(err) = backup_files_from(path, &backup_folder_path) {
+        if let Err(err) = backup_files_from_folder(path) {
             eprintln!("{:?}", err);
         }
     }
 
-    zip_files_in_folder(backup_folder_path);
+    zip_files_in_folder(BACKUP_FOLDER_PATH);
 }
 
-pub fn backup_files_from<T: AsRef<Path>>(source_path: T, backup_folder_path: T) -> io::Result<()> {
+pub fn backup_files_from_folder<T: AsRef<Path>>(source_path: T) -> io::Result<()> {
     let source_path: PathBuf = PathBuf::from(source_path.as_ref());
-    let backup_folder_path: PathBuf = PathBuf::from(backup_folder_path.as_ref());
+    let backup_folder_path: PathBuf = PathBuf::from(BACKUP_FOLDER_PATH);
 
     if !source_path.is_absolute() {
         return Err(io::Error::new(
@@ -53,26 +54,32 @@ pub fn backup_files_from<T: AsRef<Path>>(source_path: T, backup_folder_path: T) 
 
     for entry in fs::read_dir(&source_path)? {
         let file_path = entry?.path();
-        copy_file_from(file_path, &full_backup_folder_path);
+        copy_file_from_folder(file_path, &full_backup_folder_path)?;
     }
 
     return Ok(());
 }
 
-// TODO: It only copies files, not folders. Look at the "WalkDir" crate.
-fn copy_file_from(file: PathBuf, destination_folder: &PathBuf) {
-    if !file.is_file() {
-        eprintln!("Skipping '{}': not a file", file.display());
-        return;
+fn copy_file_from_folder(file: PathBuf, destination_folder: &PathBuf) -> io::Result<()> {
+    if file.is_dir() {
+        return backup_folder(file); // The "file" it is actually a folder in this context.
     }
 
+    // Skip non-regular files (symlinks, etc.)
+    if !file.is_file() {
+        eprintln!(
+            "Skipping non-regular file '{}': not a regular file",
+            file.display()
+        );
+        return Ok(());
+    }
     let mut file_destination: PathBuf = destination_folder.to_path_buf();
 
     if let Some(file_name) = file.file_name() {
         file_destination.push(file_name);
     } else {
         eprintln!("Skipping '{}': path has no final component", file.display());
-        return;
+        return Ok(());
     };
 
     if let Err(err) = fs::copy(&file, &file_destination) {
@@ -83,6 +90,51 @@ fn copy_file_from(file: PathBuf, destination_folder: &PathBuf) {
             err
         );
     }
+
+    return Ok(());
+}
+
+fn backup_folder(folder: PathBuf) -> io::Result<()> {
+    if !folder.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("source path '{}' is not a directory", folder.display()),
+        ));
+    }
+
+    let full_backup_folder_path: PathBuf = create_folder_in_backup_structure(&folder)?;
+
+    for file in WalkDir::new(&folder).max_depth(1) {
+        let file = file?;
+        if PathBuf::from(file.path()).is_dir() {
+            if file.path().canonicalize()? != folder.canonicalize()? {
+                backup_folder(file.path().to_path_buf())?;
+            }
+            continue;
+        }
+        let entry_path = file.path().to_path_buf();
+
+        copy_file_from_folder(entry_path.to_path_buf(), &full_backup_folder_path)?;
+    }
+
+    return Ok(());
+}
+
+fn create_folder_in_backup_structure<T: AsRef<Path>>(source_path_folder: T) -> io::Result<PathBuf> {
+    let source_path_folder: PathBuf = PathBuf::from(source_path_folder.as_ref());
+    let backup_folder_path: PathBuf = PathBuf::from(BACKUP_FOLDER_PATH);
+
+    let relative_source_path: PathBuf = PathBuf::from(
+        source_path_folder
+            .strip_prefix(Component::RootDir)
+            .unwrap_or(&source_path_folder), // unwrap_or returns the default value if the strip_prefix was not able to remove any RootDir component.
+    );
+
+    let full_backup_folder_path: PathBuf = backup_folder_path.join(relative_source_path);
+
+    fs::create_dir_all(&full_backup_folder_path)?;
+
+    return Ok(full_backup_folder_path);
 }
 
 pub fn zip_files_in_folder(folder_path: &str) {
