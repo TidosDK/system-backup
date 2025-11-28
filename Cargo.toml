@@ -1,13 +1,17 @@
 [package]
-name = "laptop-backup"
+name = "system-backup"
 version = "0.0.0"
+authors = ["TidosDK"]
 edition = "2024"
+rust-version = "1.89"
+description = "A fully automated backup tool that compresses and encrypts your local files for secure storage."
+repository = "https://github.com/TidosDK/system-backup/tree/main"
+license-file = "LICENSE"
 
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-
 
 [dependencies]
 tar = "0.4.44"
