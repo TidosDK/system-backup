@@ -7,6 +7,7 @@ rust-version = "1.89"
 description = "A fully automated backup tool that compresses and encrypts your local files for secure storage."
 repository = "https://github.com/TidosDK/system-backup/tree/main"
 license-file = "LICENSE"
+release = false
 
 [profile.release]
 opt-level = 3
