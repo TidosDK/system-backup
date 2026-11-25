@@ -5,16 +5,10 @@ use anyhow::{Result, bail};
 use chrono::Local;
 use walkdir::WalkDir;
 
-pub fn bundle_paths(
-    source_path: impl AsRef<Path>,
-    backup_folder_path: impl AsRef<Path>,
-) -> Result<PathBuf> {
+pub fn bundle_paths(source_path: impl AsRef<Path>, bundle_name: impl AsRef<Path>) -> Result<()> {
     let source_path: &Path = source_path.as_ref();
-    let timestamped_backup_folder_path: PathBuf =
-        generate_bundled_name(backup_folder_path.as_ref())?;
 
-    let full_backup_folder_path: PathBuf =
-        build_full_backup_path(source_path, &timestamped_backup_folder_path);
+    let full_backup_folder_path: PathBuf = build_full_backup_path(source_path, &bundle_name);
 
     fs::create_dir_all(&full_backup_folder_path)?;
 
@@ -22,13 +16,19 @@ pub fn bundle_paths(
         bail!("source path '{}' is not absolute", source_path.display());
     }
 
-    bundle_element(
-        source_path,
-        full_backup_folder_path,
-        &timestamped_backup_folder_path,
-    )?;
+    bundle_element(source_path, full_backup_folder_path, &bundle_name)?;
 
-    return Ok(timestamped_backup_folder_path);
+    return Ok(());
+}
+
+pub fn generate_bundled_name(folder_path: impl AsRef<Path>) -> Result<PathBuf> {
+    let folder_path: PathBuf = PathBuf::from(folder_path.as_ref());
+    let now: chrono::DateTime<Local> = Local::now();
+
+    let timestamp: String = now.format("%Y-%m-%d_%H-%M-%S").to_string();
+    let folder_name: PathBuf = PathBuf::from(format!("{}-{}", folder_path.display(), timestamp));
+
+    return Ok(folder_name);
 }
 
 fn bundle_element(
@@ -180,14 +180,4 @@ fn build_full_backup_path(
         .unwrap_or(source_path);
 
     return backup_folder_path.join(relative_source_path);
-}
-
-fn generate_bundled_name(folder_path: impl AsRef<Path>) -> Result<PathBuf> {
-    let folder_path: PathBuf = PathBuf::from(folder_path.as_ref());
-    let now: chrono::DateTime<Local> = Local::now();
-
-    let timestamp: String = now.format("%Y-%m-%d_%H-%M-%S").to_string();
-    let folder_name: PathBuf = PathBuf::from(format!("{}-{}", folder_path.display(), timestamp));
-
-    return Ok(folder_name);
 }
